@@ -1,15 +1,19 @@
+import time
+import pyfixbuf
 from PySide6.QtCore import QModelIndex, Qt, QAbstractItemModel
+
 from treeitem import TreeItem
+from ipfix_treemodel_helper import file_collector, info_element_decoder, sub_tmplt_list_decoder
 
 
 class TreeModel(QAbstractItemModel):
 
-    def __init__(self, headers: list, data: str, parent=None):
+    def __init__(self, headers: list, ipfix_file_path: str, parent=None):
         super().__init__(parent)
 
         self.root_data = headers
         self.root_item = TreeItem(self.root_data.copy())
-        self.setup_model_data(data.split("\n"), self.root_item)
+        self.setup_model_data(ipfix_file_path, self.root_item)
 
     def columnCount(self, parent: QModelIndex = None) -> int:
         return self.root_item.column_count()
@@ -152,39 +156,78 @@ class TreeModel(QAbstractItemModel):
 
         return result
 
-    def setup_model_data(self, lines: list, parent: TreeItem):
-        parents = [parent]
-        indentations = [0]
+    def setup_model_data(self, ipfix_file_path: str, root_tree: TreeItem):
 
-        for line in lines:
-            line = line.rstrip()
-            if line and "\t" in line:
+        col_count = self.root_item.column_count()
+        root_tree.insert_children(root_tree.child_count(), 1, col_count)
 
-                position = 0
-                while position < len(line):
-                    if line[position] != " ":
-                        break
-                    position += 1
+        tree_headers = root_tree.last_child()
+        data = [f" IPFIX File: {ipfix_file_path} ", None, None] 
+        for column in range(len(data)):
+            tree_headers.set_data(column, data[column])
 
-                column_data = line[position:].split("\t")
-                column_data = [string for string in column_data if string]
+        try:
+            id = 0
+            for rec in file_collector(ipfix_file_path):
+                if not "flowStartMilliseconds" in rec:
+                    continue
+                id += 1
+                flow_start = flow_end = duration = bidirectional = None
 
-                if position > indentations[-1]:
-                    if parents[-1].child_count() > 0:
-                        parents.append(parents[-1].last_child())
-                        indentations.append(position)
-                else:
-                    while position < indentations[-1] and parents:
-                        parents.pop()
-                        indentations.pop()
+                for field in rec.iterfields():
 
-                parent: TreeItem = parents[-1]
-                col_count = self.root_item.column_count()
-                parent.insert_children(parent.child_count(), 1, col_count)
+                    if field.name == "flowStartMilliseconds":
+                        s, ms = divmod(field.value, 1000)
+                        flow_start = '{}.{:03d}'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(s)), ms)
+                        flow_start_epoch = field.value
 
-                for column in range(len(column_data)):
-                    child = parent.last_child()
-                    child.set_data(column, column_data[column])
+                    elif field.name == "flowEndMilliseconds" and flow_start:
+                        s, ms = divmod(field.value, 1000)
+                        flow_end = '{}.{:03d}'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(s)), ms)
+                        flow_end_epoch = field.value
+                        duration = (int(flow_end_epoch) - int(flow_start_epoch))
+                        if duration/1000 >= 60:
+                            duration = f"{(duration/1000)/60:5.3f} minutes"
+                        else:
+                            duration = f"{duration/1000} seconds"
+
+                        tree_headers.insert_children(
+                            tree_headers.child_count(), 1, col_count
+                        )
+                        flow_level = tree_headers.last_child()
+                        data = [
+                            f"[{id}] Bi-directional Flow Duration: {duration}",
+                            f"Start: {flow_start}  |  End: {flow_end}",
+                            f"{pyfixbuf.DataType.get_name(field.ie.type)}"
+                        ]
+                        for column in range(len(data)):
+                            flow_level.set_data(column, data[column])
+
+                    elif field.ie.type == pyfixbuf.DataType.SUB_TMPL_LIST and flow_start and flow_end:
+                        sub_tmplt_list_decoder(rec, field, flow_level, col_count)
+
+                    elif field.ie.type == pyfixbuf.DataType.SUB_TMPL_MULTI_LIST and flow_start and flow_end:
+                        continue
+
+                    elif flow_start and flow_end:
+                        if info_element_decoder(field, flow_level, col_count) and "reverse" in field.name:
+                            bidirectional = True
+
+                if not bidirectional and flow_start and flow_end:
+                    data = [
+                        f"[{id}] One-way Flow Duration: {duration}",
+                        f"Start: {flow_start}  |  End: {flow_end}",
+                        None
+                    ]
+                    for column in range(len(data)):
+                        flow_level.set_data(column, data[column])
+
+        except Exception as e:
+            error_data = [f"Error: {str(e)}", "Failed to process IPFIX file", None]
+            tree_headers.insert_children(tree_headers.child_count(), 1, col_count)
+            error_level = tree_headers.last_child()
+            for column in range(len(error_data)):
+                error_level.set_data(column, error_data[column])
 
     def _repr_recursion(self, item: TreeItem, indent: int = 0) -> str:
         result = " " * indent + repr(item) + "\n"

@@ -1,7 +1,4 @@
-# ipfix-viewer
-
-Simple viewer(s) for IPFIX file records 
-(supports: Bidirectional Record, ...)
+# IPFIXanalysis
 
 Roadmap:
 - Decode the IPFIX sub-template-multilist structured data
@@ -10,16 +7,22 @@ Roadmap:
     - ReverseUnionTCPFlags **24** -> (000011000) **ACK, PSH** (server host of the flow)
     - ReverseInitialTCPFlags **18** -> (000010010) **SYN, ACK** (server host of the flow)
 - Qt Widget Interface:
-    - Implement the model *"setup"* in TreeModel(QAbstractItemModel) class
+    - Combined analysis IPFIX and PCAP: Data-series 
+    - charts and graphs from analysis results
 
-## Mediocre CLI decoder
-![](/docs/cli-decoder.png)  
-* DPI info-elements (HTTPS/TLS in above example)
 ___
 
 ## Qt Widget Interface
-![](/docs/Qt-widgets.png)
-* DPI info-elements (HTTP in above example)
+
+**DPI info-elements (HTTP):**
+![](/docs/HTTP.png)
+
+**DPI info-elements (HTTPS/TLS):**
+![](/docs/HTTPS-TLS.png)
+
+**DPI info-elements (DNS):**
+![](/docs/DNS.png)
+
 ___
 
 ## Qt Quick (QML / JavaScript) Interface

@@ -32,16 +32,12 @@ class MainWindow(QMainWindow):
         about_qt_action.setShortcut("F1")
 
         self.setWindowTitle("Simple IPFIX Viewer")
-
-        headers = ["Title", "Description"]
-
-        file = Path(__file__).parent / sys.argv[1]
-        self.model = TreeModel(headers, file, self)
+        headers = ["Info-Element", "Value", "Data Type (IPFIX Model)"]
+        self.model = TreeModel(headers, sys.argv[1], self)
 
         if "-t" in sys.argv:
             QAbstractItemModelTester(self.model, self)
         self.view.setModel(self.model)
         self.view.expandAll()
 
-        for column in range(self.model.columnCount()):
-            self.view.resizeColumnToContents(column)
+        self.view.resizeColumnToContents(0)
